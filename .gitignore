@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments and tooling
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Generated output (regenerate with the CLI)
+nelder-mead/output/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
