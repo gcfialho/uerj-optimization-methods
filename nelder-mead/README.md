@@ -9,6 +9,9 @@ simplex: triangles over contour plots in 2-D and tetrahedra in 3-D.
   <img src="../docs/assets/sphere-3d.gif" width="49%" alt="Nelder-Mead on the sphere function (3-D)">
 </p>
 
+More animations: [Booth](../docs/assets/booth-2d.gif), [Himmelblau](../docs/assets/himmelblau-2d.gif),
+[shifted sphere (3-D)](../docs/assets/shifted-sphere-3d.gif).
+
 ## Algorithm
 
 Each iteration sorts the $n+1$ vertices so that $f(x_1) \le \dots \le f(x_{n+1})$, computes
