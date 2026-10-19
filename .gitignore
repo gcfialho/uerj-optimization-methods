@@ -14,7 +14,7 @@ dist/
 htmlcov/
 
 # Generated output (regenerate with the CLI)
-nelder-mead/output/
+output/
 
 # OS / editors
 .DS_Store
