@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command")
     serve = sub.add_parser("serve", help="start the web UI (default)")
     serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=5000)
+    serve.add_argument("--port", type=int, default=5050)
     serve.add_argument("--debug", action="store_true", help="Flask debug mode (local use only)")
     compare = sub.add_parser("compare", help="run SD, Newton and DFP and print a table")
     compare.add_argument("--d0", type=float, default=0.5, help="initial diameter [m]")
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
     from tank_optimizer.app import create_app
 
     host = getattr(args, "host", "127.0.0.1")
-    port = getattr(args, "port", 5000)
+    port = getattr(args, "port", 5050)
     create_app().run(host=host, port=port, debug=getattr(args, "debug", False))
 
 

@@ -102,7 +102,7 @@ uv sync
 
 uv run nelder-mead --function rosenbrock --dim 2 --animate    # -> output/rosenbrock-2d.{csv,gif}
 uv run nelder-mead --function sphere --dim 6 --compare-scipy
-uv run tank-optimizer                                         # UI at http://127.0.0.1:5000
+uv run tank-optimizer                                         # UI at http://127.0.0.1:5050
 uv run tank-optimizer compare --d0 0.32 --l0 1.98
 ```
 

@@ -56,7 +56,7 @@ supplied.
 ## Run
 
 ```bash
-uv run tank-optimizer                 # web UI on http://127.0.0.1:5000
+uv run tank-optimizer                 # web UI on http://127.0.0.1:5050
 uv run tank-optimizer compare --d0 0.5 --l0 0.5   # same comparison in the terminal
 ```
 
