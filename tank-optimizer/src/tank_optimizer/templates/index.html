@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cylindrical Tank Optimizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/feather-icons@4.29.2/dist/feather.min.js"></script>
+
+    <style type="text/tailwindcss">
+        html.dark {
+            color-scheme: dark;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            @apply bg-slate-900 text-slate-300;
+        }
+
+        .card {
+            @apply bg-slate-800 border border-slate-700 p-6 rounded-lg shadow-lg;
+        }
+
+        .form-input {
+            @apply w-full px-3 py-2 text-slate-200 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all;
+        }
+
+        .btn-primary {
+            @apply w-full flex items-center justify-center bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-blue-500/40 transform hover:-translate-y-0.5 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-500 disabled:from-slate-600 disabled:to-slate-700 disabled:text-slate-400 disabled:shadow-none disabled:transform-none;
+        }
+
+        .result-card {
+            @apply flex flex-col items-center justify-center p-4 bg-slate-700/50 rounded-lg;
+        }
+
+        .result-label {
+            @apply flex items-center text-sm font-medium text-slate-400;
+        }
+
+        .result-value {
+            @apply text-xl font-semibold text-white mt-1;
+        }
+
+        .plot-container.loading::before {
+            content: 'Computing...';
+            @apply absolute inset-0 flex items-center justify-center text-lg font-medium text-slate-300 bg-slate-800/80 z-10;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+            width: 100%;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            @apply h-1.5 bg-slate-600 rounded-full cursor-pointer;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            @apply w-4 h-4 bg-blue-500 rounded-full -mt-1.5 transform;
+        }
+
+        .example-card {
+            background-color: #2c3e50;
+            border: 1px solid #34495e;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: left;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .example-card:hover {
+            border-color: #f39c12;
+            transform: translateY(-2px);
+            background-color: #34495e;
+        }
+
+        .example-card .icon {
+            width: 28px;
+            height: 28px;
+            color: #f1c40f;
+            stroke-width: 1.5;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            color: #bdc3c7;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            color: #f1c40f;
+            border-bottom-color: #f1c40f;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .comparison-table {
+            width: 100%;
+            margin-top: 1rem;
+            border-collapse: collapse;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            border: 1px solid #34495e;
+            padding: 0.75rem;
+            text-align: left;
+        }
+
+        .comparison-table th {
+            background-color: #2c3e50;
+        }
+
+        .comparison-table td:first-child {
+            font-weight: 600;
+            color: #f1c40f;
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+
+    <div class="w-full p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-bold text-white">Cylindrical Tank Optimizer</h1>
+            <p class="text-slate-400 mt-2">Constrained nonlinear optimization: minimum-cost tank design</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div class="lg:col-span-4 xl:col-span-3 space-y-8">
+                <!-- Control panel (parameters) -->
+                <div class="card">
+                    <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+                        <i data-feather="sliders" class="mr-3 text-blue-400"></i>
+                        Control Panel
+                    </h2>
+                    <form id="opt-form" class="space-y-6">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-300 mb-4 border-b border-slate-700 pb-2">Starting
+                                Point</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="space-y-1">
+                                    <label for="D0" class="flex items-center text-sm font-medium text-slate-400">
+                                        <i data-feather="git-commit" class="w-4 h-4 mr-1.5 transform rotate-90"></i>
+                                        Diameter (D₀) [m]
+                                    </label>
+                                    <input type="number" id="D0" value="0.5" step="0.01"
+                                        class="text-center form-input rounded-lg h-12">
+                                </div>
+                                <div class="space-y-1">
+                                    <label for="L0" class="flex items-center text-sm font-medium text-slate-400">
+                                        <i data-feather="git-commit" class="w-4 h-4 mr-1.5"></i>
+                                        Length (L₀) [m]
+                                    </label>
+                                    <input type="number" id="L0" value="0.5" step="0.01"
+                                        class="text-center form-input rounded-lg h-12">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-300 mb-4 border-b border-slate-700 pb-2">
+                                Optimizer Settings</h3>
+                            <div class="space-y-4">
+                                <div id="method-selection-wrapper" class="space-y-1">
+                                    <label for="method" class="flex items-center text-sm font-medium text-slate-400">
+                                        <i data-feather="cpu" class="w-4 h-4 mr-1.5"></i>
+                                        Method
+                                    </label>
+                                    <select id="method" class="text-center form-input rounded-lg h-12">
+                                        <option value="SD">Steepest Descent</option>
+                                        <option value="Newton">Newton</option>
+                                        <option value="DFP">DFP (Quasi-Newton)</option>
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="space-y-1">
+                                        <label for="tol" class="flex items-center text-sm font-medium text-slate-400">
+                                            <i data-feather="target" class="w-4 h-4 mr-1.5"></i>
+                                            Tolerance on ‖∇f‖ (ε)
+                                        </label>
+                                        <input type="text" id="tol" value="1e-6"
+                                            class="text-center form-input rounded-lg h-12">
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label for="max_iter"
+                                            class="flex items-center text-sm font-medium text-slate-400">
+                                            <i data-feather="repeat" class="w-4 h-4 mr-1.5"></i>
+                                            Max. Iterations
+                                        </label>
+                                        <input type="number" id="max_iter" value="200"
+                                            class="text-center form-input rounded-lg h-12">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="run-btn"
+                            class="w-full mt-8 text-lg font-semibold rounded-xl h-14 bg-green-600 hover:bg-green-700 focus:bg-green-700 text-white flex items-center justify-center gap-2 shadow-md transition-all duration-200 border border-green-700 focus:outline-none focus:ring-2 focus:ring-green-400">
+                            <i data-feather="play-circle" class="mr-2 w-6 h-6"></i>
+                            <span id="run-btn-text">Run</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Preset scenarios -->
+                <div class="card">
+                    <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+                        <i data-feather="zap" class="mr-3 text-amber-400"></i>
+                        Test Scenarios
+                    </h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button data-example="0" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="target" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Robust Start</span>
+                                    <span class="text-xs text-slate-400 block">DFP, far from the optimum</span>
+                                </div>
+                            </div>
+                        </button>
+                        <button data-example="1" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="compass" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Tricky Corner</span>
+                                    <span class="text-xs text-slate-400 block">Newton, near the boundary</span>
+                                </div>
+                            </div>
+                        </button>
+
+                        <button data-example="2" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="chevrons-right" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Quick Look</span>
+                                    <span class="text-xs text-slate-400 block">Robust Start, max_iter=20</span>
+                                </div>
+                            </div>
+                        </button>
+                        <button data-example="3" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="git-pull-request" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Narrow Valley</span>
+                                    <span class="text-xs text-slate-400 block">S.D., zig-zag</span>
+                                </div>
+                            </div>
+                        </button>
+
+                        <button data-example="4" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="arrow-down-circle" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Low Volume</span>
+                                    <span class="text-xs text-slate-400 block">Newton, V<sub>min</sub> penalty</span>
+                                </div>
+                            </div>
+                        </button>
+                        <button data-example="5" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="arrow-up-circle" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">High Volume</span>
+                                    <span class="text-xs text-slate-400 block">DFP, V<sub>max</sub> penalty</span>
+                                </div>
+                            </div>
+                        </button>
+
+                        <button data-example="6" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="fast-forward" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Corner Recovery</span>
+                                    <span class="text-xs text-slate-400 block">S.D., thin and long</span>
+                                </div>
+                            </div>
+                        </button>
+                        <button data-example="7" class="example-card">
+                            <div class="flex items-center">
+                                <i data-feather="zap-off" class="icon"></i>
+                                <div class="ml-3">
+                                    <span class="font-semibold block text-white">Inefficient Start</span>
+                                    <span class="text-xs text-slate-400 block">Newton, short and wide</span>
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results column (right) -->
+            <div class="lg:col-span-8 xl:col-span-9">
+                <!-- Tabs -->
+                <div class="tabs flex border-b border-slate-700 mb-6">
+                    <button class="tab-btn" data-tab="individual">Single Method</button>
+                    <button class="tab-btn active" data-tab="comparison">Comparison</button>
+                </div>
+
+                <!-- Tab content -->
+                <div class="relative">
+                    <!-- Single-method tab -->
+                    <div id="individual-tab" class="tab-content space-y-6">
+                        <div id="individual-results-card" class="card hidden">
+                            <h2 class="text-xl font-bold text-white mb-4">Optimization Results</h2>
+                            <div
+                                class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 text-center items-center justify-center">
+                                <div class="result-card">
+                                    <span class="result-label">Diameter (D*)</span>
+                                    <span id="res-d" class="result-value">-</span>
+                                </div>
+                                <div class="result-card">
+                                    <span class="result-label">Length (L*)</span>
+                                    <span id="res-l" class="result-value">-</span>
+                                </div>
+                                <div class="result-card">
+                                    <span class="result-label">Final Cost</span>
+                                    <span id="res-cost" class="result-value text-amber-400">-</span>
+                                </div>
+                                <div class="result-card">
+                                    <span class="result-label">Iterations</span>
+                                    <span id="res-iter" class="result-value">-</span>
+                                </div>
+                                <div class="result-card">
+                                    <span class="result-label">f Evaluations</span>
+                                    <span id="res-eval" class="result-value">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            <div id="individual-contour-card" class="card hidden h-full">
+                                <h2 class="text-xl font-bold text-white mb-4">Contours and Trajectory</h2>
+                                <div id="contour-plot" class="w-full h-[550px]"></div>
+                            </div>
+                            <div id="individual-convergence-card" class="card hidden h-full">
+                                <h2 class="text-xl font-bold text-white mb-4">Gradient Convergence</h2>
+                                <div id="convergence-plot" class="w-full h-[550px]"></div>
+                            </div>
+                        </div>
+                        <div id="welcome-message" class="card flex flex-col items-center justify-center min-h-[400px]">
+                            <div class="max-w-md text-center"><i data-feather="bar-chart-2"
+                                    class="w-16 h-16 text-blue-500 mx-auto mb-4"></i>
+                                <h2 class="text-2xl font-bold text-white">Ready to Optimize</h2>
+                                <p class="mt-3 text-slate-400">Set the parameters and click "Run", or pick a
+                                    test scenario to get started.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison tab -->
+                    <div id="comparison-tab" class="tab-content active space-y-6">
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            <div id="comparison-contour-card" class="card hidden h-full">
+                                <h2 class="text-xl font-bold text-white mb-4 flex justify-between items-center">
+                                    <span>Trajectories</span>
+                                    <button id="replay-contour-btn" title="Replay animation" aria-label="Replay trajectory animation"
+                                        class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full transition-colors">
+                                        <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                                    </button>
+                                </h2>
+                                <div id="comparison-contour-plot" class="w-full h-[550px]"></div>
+                            </div>
+                            <div id="comparison-convergence-card" class="card hidden h-full">
+                                <h2 class="text-xl font-bold text-white mb-4 flex justify-between items-center">
+                                    <span>Convergence</span>
+                                    <button id="replay-convergence-btn" title="Replay animation" aria-label="Replay convergence animation"
+                                        class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full transition-colors">
+                                        <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                                    </button>
+                                </h2>
+                                <div id="comparison-convergence-plot" class="w-full h-[550px]"></div>
+                            </div>
+                        </div>
+                        <div id="comparison-table-card" class="card hidden">
+                            <h2 class="text-xl font-bold text-white mb-4">Results by Method</h2>
+                            <div class="overflow-x-auto">
+                                <table id="comparison-results-table" class="comparison-table"></table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+
+</body>
+
+</html>

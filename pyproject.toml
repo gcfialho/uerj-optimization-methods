@@ -1,0 +1,47 @@
+[project]
+name = "uerj-optimization-methods"
+version = "1.0.0"
+description = "Numerical optimization coursework (UERJ): Nelder-Mead simplex and a constrained tank-design optimizer."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Guilherme Fialho" }]
+dependencies = ["nelder-mead", "tank-optimizer"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.12",
+    "scipy>=1.14",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["nelder-mead", "tank-optimizer"]
+
+[tool.uv.sources]
+nelder-mead = { workspace = true }
+tank-optimizer = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["nelder-mead/tests", "tank-optimizer/tests"]
+addopts = ["--import-mode=importlib", "-ra"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF", "NPY", "PT"]
+ignore = [
+    "N803", # math-style argument names (D, L, X) mirror the formulas
+    "N806", # math-style local names
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nelder_mead", "tank_optimizer"]
+
+[tool.ruff.format]
+docstring-code-format = true
