@@ -1,0 +1,19 @@
+[project]
+name = "tank-optimizer"
+version = "1.0.0"
+description = "Constrained cost minimization of a cylindrical tank, with a Flask + Plotly UI."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Guilherme Fialho" }]
+dependencies = [
+    "flask>=3.1",
+    "numpy>=2.0",
+]
+
+[project.scripts]
+tank-optimizer = "tank_optimizer.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"

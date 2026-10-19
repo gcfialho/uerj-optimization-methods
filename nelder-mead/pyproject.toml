@@ -1,0 +1,19 @@
+[project]
+name = "nelder-mead"
+version = "1.0.0"
+description = "Nelder-Mead simplex method with 2-D/3-D simplex animations."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Guilherme Fialho" }]
+dependencies = [
+    "numpy>=2.0",
+    "matplotlib>=3.9",
+]
+
+[project.scripts]
+nelder-mead = "nelder_mead.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"
