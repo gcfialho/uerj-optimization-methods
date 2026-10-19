@@ -182,3 +182,28 @@ def test_solve_bookkeeping() -> None:
 def test_solve_rejects_unknown_method() -> None:
     with pytest.raises(ValueError, match="unknown method"):
         solve((0.5, 0.5), method="BFGS")
+
+
+def test_dfp_is_robust_on_rosenbrock() -> None:
+    """Regression: with Armijo-only steps DFP crawled and ran out of iterations from most
+    starts (platform-dependent in CI). With the strong-Wolfe search every start converges."""
+    rng = np.random.default_rng(1)
+    for x0 in rng.uniform(-2, 2, size=(50, 2)):
+        result = minimize(rosenbrock, x0, method="DFP", tol=1e-5, max_iter=500)
+        assert result.converged, (x0, result.message)
+        np.testing.assert_allclose(result.x, [1.0, 1.0], atol=1e-4)
+        assert result.nit < 100
+
+
+def test_dfp_steps_satisfy_strong_wolfe() -> None:
+    opt = DFP(Objective(rosenbrock), [-1.2, 1.0])
+    x, g = opt.x, opt.fun.grad(opt.x)
+    fx = rosenbrock(x)
+    for _ in range(10):
+        p = opt.direction(x, g)
+        alpha, f_new, g_new = opt.line_search(x, fx, g, p)
+        assert alpha > 0
+        assert f_new <= fx + opt.c1 * alpha * (g @ p)
+        assert abs(g_new @ p) <= opt.c2 * abs(g @ p)
+        opt.update(alpha * p, g_new - g)
+        x, g, fx = x + alpha * p, g_new, f_new

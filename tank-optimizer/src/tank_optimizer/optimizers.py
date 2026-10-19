@@ -1,9 +1,9 @@
 """Gradient-based line-search methods: Steepest Descent, Newton and DFP (quasi-Newton).
 
 All methods share one loop: pick a search direction ``p_k``, fall back to ``-g_k`` if
-``p_k`` is not a descent direction, choose a step with Armijo backtracking and stop when
-``||g_k|| <= tol``. Exact derivatives are used when supplied, central finite differences
-otherwise (see :class:`Objective`).
+``p_k`` is not a descent direction, choose a step (Armijo backtracking; strong Wolfe for
+DFP) and stop when ``||g_k|| <= tol``. Exact derivatives are used when supplied, central
+finite differences otherwise (see :class:`Objective`).
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 FloatArray = NDArray[np.float64]
+#: A line-search outcome: step length, f at the new point, gradient there (if computed).
+Step = tuple[float, float, FloatArray | None]
 
 
 class Objective:
@@ -134,20 +136,19 @@ class BaseOptimizer(ABC):
     def update(self, s: FloatArray, y: FloatArray) -> None:  # noqa: B027 (optional hook)
         """Called after each step with ``s = x_{k+1} - x_k`` and ``y = g_{k+1} - g_k``."""
 
-    def line_search(
-        self, x: FloatArray, fx: float, g: FloatArray, p: FloatArray
-    ) -> tuple[float, float]:
-        """Backtrack until ``f(x + a p) <= f(x) + c1 a g^T p`` (Armijo); return ``(a, f)``.
+    def line_search(self, x: FloatArray, fx: float, g: FloatArray, p: FloatArray) -> Step:
+        """Backtrack until ``f(x + a p) <= f(x) + c1 a g^T p`` (Armijo).
 
-        Returns ``a = 0`` when no acceptable step larger than ``min_step`` exists.
+        Returns ``(a, f(x + a p), None)``, or ``a = 0`` when no acceptable step larger than
+        ``min_step`` exists.
         """
         alpha, slope = 1.0, float(g @ p)
         while alpha >= self.min_step:
             f_new = self.fun(x + alpha * p)
             if f_new <= fx + self.c1 * alpha * slope:
-                return alpha, f_new
+                return alpha, f_new, None
             alpha *= self.backtrack
-        return 0.0, fx
+        return 0.0, fx, None
 
     def optimize(self) -> OptimizeResult:
         x = self.x
@@ -169,12 +170,13 @@ class BaseOptimizer(ABC):
             if not np.all(np.isfinite(p)) or p @ g >= 0:
                 p = -g
                 self.reset()
-            alpha, f_new = self.line_search(x, fx, g, p)
+            alpha, f_new, g_new = self.line_search(x, fx, g, p)
             if alpha == 0.0:
                 message = "Line search could not decrease f (precision limit of the gradient)."
                 break
             x_new = x + alpha * p
-            g_new = self.fun.grad(x_new)
+            if g_new is None:
+                g_new = self.fun.grad(x_new)
             self.update(x_new - x, g_new - g)
             x, g, fx = x_new, g_new, f_new
             nit += 1
@@ -222,7 +224,17 @@ class DFP(BaseOptimizer):
 
     ``B_{k+1} = B_k + s s^T / (s^T y) - B_k y y^T B_k / (y^T B_k y)``, applied only when
     the curvature condition ``s^T y > 0`` holds, which keeps ``B`` positive definite.
+
+    Quasi-Newton updates need steps that satisfy the Wolfe conditions, so DFP uses a
+    strong-Wolfe line search instead of plain Armijo backtracking. Armijo alone accepts
+    steps that are far too short along curved valleys: ``s^T y`` is then tiny or negative,
+    updates are skipped or badly scaled, and the method crawls (on Rosenbrock it ran out of
+    500 iterations from most starting points within 1e-9 of ``(-1.2, 1)``).
     """
+
+    c2 = 0.1  # strong-Wolfe curvature constant: a fairly accurate line search, as DFP needs
+    max_step = 1e3
+    max_trials = 40
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
@@ -233,6 +245,56 @@ class DFP(BaseOptimizer):
 
     def reset(self) -> None:
         self.B = np.eye(self.x.size)
+
+    def line_search(self, x: FloatArray, fx: float, g: FloatArray, p: FloatArray) -> Step:
+        """Strong Wolfe line search (Nocedal & Wright, Algorithms 3.5 and 3.6, bisection zoom).
+
+        Finds ``a`` with ``f(x + a p) <= f(x) + c1 a g^T p`` and
+        ``|grad f(x + a p)^T p| <= c2 |g^T p|``. If the trial budget runs out, it returns the
+        best step that satisfies the sufficient-decrease condition, or ``a = 0`` if none does.
+        """
+        slope0 = float(g @ p)
+        trials = 0
+
+        def armijo_fails(a: float, f_a: float) -> bool:
+            return not math.isfinite(f_a) or f_a > fx + self.c1 * a * slope0
+
+        def zoom(lo: float, f_lo: float, g_lo: FloatArray | None, hi: float) -> Step:
+            nonlocal trials
+            while trials < self.max_trials and abs(hi - lo) > self.min_step:
+                trials += 1
+                a = 0.5 * (lo + hi)
+                f_a = self.fun(x + a * p)
+                if armijo_fails(a, f_a) or f_a >= f_lo:
+                    hi = a
+                    continue
+                g_a = self.fun.grad(x + a * p)
+                d_a = float(g_a @ p)
+                if abs(d_a) <= -self.c2 * slope0:
+                    return a, f_a, g_a
+                if d_a * (hi - lo) >= 0:
+                    hi = lo
+                lo, f_lo, g_lo = a, f_a, g_a
+            return (lo, f_lo, g_lo) if lo > 0 else (0.0, fx, None)
+
+        a_prev, f_prev, g_prev = 0.0, fx, None
+        a = 1.0
+        while trials < self.max_trials:
+            trials += 1
+            f_a = self.fun(x + a * p)
+            if armijo_fails(a, f_a) or (a_prev > 0 and f_a >= f_prev):
+                return zoom(a_prev, f_prev, g_prev, a)
+            g_a = self.fun.grad(x + a * p)
+            d_a = float(g_a @ p)
+            if abs(d_a) <= -self.c2 * slope0:
+                return a, f_a, g_a
+            if d_a >= 0:
+                return zoom(a, f_a, g_a, a_prev)
+            a_prev, f_prev, g_prev = a, f_a, g_a
+            if a >= self.max_step:
+                break
+            a = min(2 * a, self.max_step)
+        return (a_prev, f_prev, g_prev) if a_prev > 0 else (0.0, fx, None)
 
     def update(self, s: FloatArray, y: FloatArray) -> None:
         sy = float(s @ y)

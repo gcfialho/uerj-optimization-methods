@@ -1,6 +1,6 @@
 # tank-optimizer
 
-Minimum-cost design of a closed cylindrical steel tank under volume and size constraints. The problem is solved as a sequence of penalty and barrier subproblems (`constrained.py`), each minimized by Steepest Descent, Newton or DFP (quasi-Newton). All three use Armijo backtracking and exact derivatives.
+Minimum-cost design of a closed cylindrical steel tank under volume and size constraints. The problem is solved as a sequence of penalty and barrier subproblems (`constrained.py`), each minimized by Steepest Descent, Newton or DFP (quasi-Newton) with exact derivatives. SD and Newton use Armijo backtracking; DFP uses a strong-Wolfe line search.
 
 The Flask + Plotly UI shows:
 
@@ -27,7 +27,7 @@ All modules are in `src/tank_optimizer/`:
 
 - `objective.py`: the cost model $C(D, L)$, the constraints $g \le 0$, and the penalty and barrier subproblems with their exact derivatives.
 - `constrained.py`: the SUMT driver. It runs an exterior penalty until the design is feasible, then barrier weights $\mu = 10 \to 0.01$.
-- `optimizers.py`: SD, Newton and DFP, the Armijo line search, and evaluation counting.
+- `optimizers.py`: SD, Newton and DFP, the Armijo and strong-Wolfe line searches, and evaluation counting.
 - `service.py`: input validation and the JSON payload. `app.py` is the Flask app factory; `cli.py` provides `serve` and `compare`.
 - `templates/index.html` and `static/js/main.js`: the UI.
 

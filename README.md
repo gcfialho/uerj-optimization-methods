@@ -12,7 +12,7 @@ A Nelder-Mead simplex solver that matches SciPy step for step, and a constrained
 - **Invariants as tests.** Every iteration keeps the vertices sorted, the best value never increases, and each operation scales the simplex volume by its theoretical factor ($\alpha$, $\alpha\gamma$, $\alpha\rho$, $\rho$, $\sigma^n$). All five branches, shrink included, are exercised.
 - **Constrained optimization done carefully.** The tank problem is solved with an exterior penalty until the design is feasible, then a log barrier with a decreasing weight. Gradients and Hessians are exact, checked against finite differences. Newton reaches the optimum, to within \$0.01, from every start tested.
 - **Debugging numerical failures.** The original version reported infeasible designs as optimal: near $f \approx 10^{12}$, finite differences return a gradient of exactly zero. That root cause is documented and fixed (see [tank-optimizer](tank-optimizer/README.md#changes-from-the-original-coursework-version)).
-- **Packaged and reproducible.** uv workspace, src layouts, typed code, two CLIs, ruff, 86 pytest tests, and GitHub Actions on Python 3.12 and 3.13.
+- **Packaged and reproducible.** uv workspace, src layouts, typed code, two CLIs, ruff, 88 pytest tests, and GitHub Actions on Python 3.12 and 3.13.
 
 ## Quickstart
 
@@ -52,7 +52,7 @@ graph LR
         CLI2["tank-optimizer compare"] --> SVC
         API --> SVC["service.py"]
         SVC --> SUMT["constrained.solve: penalty, then barrier"]
-        SUMT --> OPT["SD / Newton / DFP + Armijo"]
+        SUMT --> OPT["SD, Newton (Armijo) / DFP (strong Wolfe)"]
         SUMT --> OBJ["objective.py: C, g, exact derivatives"]
     end
 ```
@@ -78,13 +78,13 @@ SciPy reports one more iteration (127, 67, …) because its counter starts at 1.
 | Method | D [m] | L [m] | Cost [\$] | Gap to C* | Iterations | f evals | Status |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | Newton | 0.9487 | 1.0185 | 5,354.36 | 0.01 \$ | 45 | 146 | converged |
-| DFP | 0.9487 | 1.0185 | 5,354.36 | 0.01 \$ | 96 | 337 | converged |
+| DFP | 0.9487 | 1.0185 | 5,354.36 | 0.01 \$ | 41 | 432 | stopped at float precision of f |
 | Steepest Descent | 0.9837 | 0.9474 | 5,361.21 | 6.86 \$ | 200 | 4,810 | feasible, budget spent |
 
 Across eight starts (the default plus the seven distinct UI presets):
 
 - **Newton** converges every time, in 44 to 64 iterations.
-- **DFP** always ends within \$0.01 of $C^*$, but meets the gradient tolerance from only one start.
+- **DFP** always ends within \$0.01 of $C^*$, in 41 to 50 iterations. It meets the gradient tolerance from 2 of the 8 starts; from the others it stops because the line search can no longer resolve a decrease in f (see Limitations).
 - **Steepest Descent** always ends feasible, between \$1.3 and \$336 above $C^*$.
 
 <p>
@@ -139,7 +139,7 @@ $$
 \end{aligned}
 $$
 
-The problem is solved as a sequence of unconstrained subproblems (SUMT), each warm-started from the previous solution and minimized by the selected method with Armijo backtracking:
+The problem is solved as a sequence of unconstrained subproblems (SUMT), each warm-started from the previous solution and minimized by the selected method. SD and Newton use Armijo backtracking; DFP uses a strong-Wolfe line search ($c_1 = 10^{-4}$, $c_2 = 0.1$):
 
 1. **Exterior penalty**, only while the design is infeasible: $\psi_r = C + r\sum_i \max(0,\ g_i + 10^{-3})^2$ for $r = 10^5, 10^6, \dots$, until the design is strictly feasible.
 2. **Interior barrier**: $\phi_\mu = C - \mu \sum_i \ln(-g_i)$ for $\mu = 10, 1, 0.1, 0.01$.
@@ -166,7 +166,7 @@ The final subproblem must satisfy $\lVert\nabla\phi_\mu\rVert \le$ `tol` (defaul
 ## Testing
 
 ```bash
-uv run pytest                                        # 86 tests
+uv run pytest                                        # 88 tests
 uv run ruff check . && uv run ruff format --check .
 ```
 
@@ -187,7 +187,8 @@ The tests cover:
 
 ## Limitations & roadmap
 
-- Steepest Descent cannot solve the ill-conditioned barrier subproblems within 200 iterations. DFP with Armijo backtracking (no Wolfe conditions) often stalls just above the gradient tolerance. A BFGS method with a Wolfe line search is the natural next step.
+- Steepest Descent cannot solve the ill-conditioned barrier subproblems within 200 iterations.
+- In the last barrier subproblem the curvature is around $10^9$ to $10^{10}$. Once $\lVert\nabla\phi\rVert$ is small, the decrease a step can achieve falls below the float spacing of $\phi \approx 5.4 \times 10^3$ (about $10^{-12}$), so the line search cannot confirm it. DFP usually stops there, at the same design as Newton, without meeting `tol = 1e-6`. A BFGS update and a termination test scaled to $f$ are the natural next steps.
 - The final barrier weight ($\mu = 0.01$) leaves the design strictly inside the feasible set, at a cost \$0.01 above $C^*$.
 - The weld-length model, two circumferential seams per end plate at the mean diameter, comes from the original coursework. The problem statement it was based on is not part of this repository.
 - The UI loads Tailwind and Plotly from CDNs and runs on Flask's development server. It is meant for local use only.
