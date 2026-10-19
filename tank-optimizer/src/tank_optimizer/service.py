@@ -1,115 +1,99 @@
-"""Controller layer: gathers UI parameters, calls the optimization, and returns data."""
+"""Service layer: validates UI parameters, runs the optimizers and shapes the JSON payload."""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
 import numpy as np
-from numpy.typing import NDArray
-from typing import Dict, Any, Type, List
 
-from models.optimizers import SteepestDescent, Newton, DFP, FunctionWrapper, BaseOptimizer
-from models.objective import penalized_cost, cost
+from tank_optimizer.constrained import ConstrainedResult, solve
+from tank_optimizer.objective import SPEC, cost, volume
+from tank_optimizer.optimizers import METHODS
 
-METHOD_MAP: Dict[str, Type[BaseOptimizer]] = {
-    "SD": SteepestDescent,
-    "Newton": Newton,
-    "DFP": DFP,
-}
+__all__ = ["InvalidRequestError", "contour_grid", "run_comparison", "run_optimization"]
 
-def run_optimization(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Runs the optimization based on the interface parameters."""
-    method: str = params.get("method", "SD")
-    x0: NDArray[np.float64] = np.array([float(params["D0"]), float(params["L0"])])
-    tol: float = float(params.get("tol", 1e-6))
-    max_it: int = int(params.get("max_iter", 200))
+D_RANGE = (0.1, 1.2)
+L_RANGE = (0.1, 2.2)
+GRID_POINTS = 50
 
-    # Wrap the cost function to count evaluations
-    fun: FunctionWrapper = FunctionWrapper(penalized_cost)
 
-    OptimCls: Type[BaseOptimizer] = METHOD_MAP[method]
-    
-    # The `lr` step is no longer necessary, as all methods use line search
-    opt: BaseOptimizer = OptimCls(fun, x0, tol=tol, max_iter=max_it)
-        
-    result = opt.optimize()
+class InvalidRequestError(ValueError):
+    """Raised for malformed or out-of-range request parameters."""
 
-    # --- Prepare data for the View ---
-    
-    # 1. Optimization Results
-    final_x: NDArray[np.float64] = result["x"]
-    final_cost: float = cost(final_x[0], final_x[1])
 
-    # 2. Contour Plot Data
-    d_range: NDArray[np.float64] = np.linspace(0.1, 1.2, 50, dtype=np.float64)
-    l_range: NDArray[np.float64] = np.linspace(0.1, 2.2, 50, dtype=np.float64)
-    d_grid, l_grid = np.meshgrid(d_range, l_range)
-    cost_grid: NDArray[np.float64] = np.zeros_like(d_grid, dtype=np.float64)
-    
-    for i in range(d_grid.shape[0]):
-        for j in range(d_grid.shape[1]):
-            cost_grid[i, j] = cost(d_grid[i, j], l_grid[i, j])
+def _parse(params: dict[str, Any]) -> tuple[np.ndarray, float, int]:
+    try:
+        x0 = np.array([float(params["D0"]), float(params["L0"])])
+        tol = float(params.get("tol", 1e-6))
+        max_iter = int(params.get("max_iter", 200))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidRequestError(f"invalid parameters: {exc}") from None
+    if not np.all(np.isfinite(x0)) or np.any(x0 <= 0):
+        raise InvalidRequestError("D0 and L0 must be positive numbers")
+    if not (math.isfinite(tol) and tol > 0):
+        raise InvalidRequestError("tol must be a positive number")
+    if not 1 <= max_iter <= 10_000:
+        raise InvalidRequestError("max_iter must be between 1 and 10000")
+    return x0, tol, max_iter
 
-    # 3. Build the final payload
-    payload: Dict[str, Any] = {
-        # Results
-        "history": np.array(result["history"], dtype=float).tolist(),
-        "errors":  result["errors"],
-        "final_D": final_x[0],
-        "final_L": final_x[1],
-        "final_cost": final_cost,
-        "iterations": len(result["errors"]) - 1,
-        "num_eval": result.get("fun_evals", 0),
-        
-        # Contour Plot Data
-        "contour": {
-            "d": d_range.tolist(),
-            "l": l_range.tolist(),
-            "cost": cost_grid.tolist()
-        }
+
+def _finite(values: list[float]) -> list[float | None]:
+    """JSON has no inf/nan; send ``null`` instead."""
+    return [v if math.isfinite(v) else None for v in values]
+
+
+def _summary(result: ConstrainedResult) -> dict[str, Any]:
+    D, L = (float(v) for v in result.x)
+    return {
+        "history": np.asarray(result.history, dtype=float).tolist(),
+        "errors": _finite(result.grad_norms),
+        "final_D": D,
+        "final_L": L,
+        "final_cost": result.cost,
+        "final_volume": float(volume(D, L)),
+        "feasible": result.feasible,
+        "iterations": result.nit,
+        "num_eval": result.nfev,
+        "num_grad": result.ngev,
+        "num_hess": result.nhev,
+        "converged": result.converged,
+        "message": result.message,
+        "stages": [
+            {"kind": st.kind, "weight": st.weight, "iterations": st.nit} for st in result.stages
+        ],
     }
-    return payload
 
-def run_comparison(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Runs the optimization for all three methods in comparison mode."""
-    x0: NDArray[np.float64] = np.array([float(params["D0"]), float(params["L0"])])
-    tol: float = float(params.get("tol", 1e-6))
-    max_it: int = int(params.get("max_iter", 200))
 
-    # Object to store aggregated results
-    comparison_results: Dict[str, Any] = {}
-
-    # Run each method
-    for method_name, OptimCls in METHOD_MAP.items():
-        fun = FunctionWrapper(penalized_cost)
-        opt = OptimCls(fun, x0, tol=tol, max_iter=max_it)
-        result = opt.optimize()
-
-        final_x = result["x"]
-        final_cost_val = cost(final_x[0], final_x[1])
-
-        comparison_results[method_name] = {
-            "history": np.array(result["history"], dtype=float).tolist(),
-            "errors":  result["errors"],
-            "final_D": final_x[0],
-            "final_L": final_x[1],
-            "final_cost": final_cost_val,
-            "iterations": len(result["errors"]) - 1,
-            "num_eval": result.get("fun_evals", 0),
-        }
-
-    # Calculate contour data (only once)
-    d_range = np.linspace(0.1, 1.2, 50, dtype=np.float64)
-    l_range = np.linspace(0.1, 2.2, 50, dtype=np.float64)
-    d_grid, l_grid = np.meshgrid(d_range, l_range)
-    cost_grid = np.zeros_like(d_grid, dtype=np.float64)
-    
-    for i in range(d_grid.shape[0]):
-        for j in range(d_grid.shape[1]):
-            cost_grid[i, j] = cost(d_grid[i, j], l_grid[i, j])
-
-    # Build the final payload
-    payload: Dict[str, Any] = {
-        "results": comparison_results,
-        "contour": {
-            "d": d_range.tolist(),
-            "l": l_range.tolist(),
-            "cost": cost_grid.tolist()
-        }
+def contour_grid() -> dict[str, Any]:
+    """Cost surface on a regular grid plus the problem limits used to draw the feasible set."""
+    d = np.linspace(*D_RANGE, GRID_POINTS)
+    l_ = np.linspace(*L_RANGE, GRID_POINTS)
+    D, L = np.meshgrid(d, l_)
+    return {
+        "d": d.tolist(),
+        "l": l_.tolist(),
+        "cost": cost(D, L).tolist(),
+        "limits": {
+            "v_min": SPEC.min_volume,
+            "v_max": SPEC.max_volume,
+            "d_max": SPEC.max_diameter,
+            "l_max": SPEC.max_length,
+        },
     }
-    return payload
+
+
+def run_optimization(params: dict[str, Any]) -> dict[str, Any]:
+    """Run the method named in ``params["method"]`` (``SD``, ``Newton`` or ``DFP``)."""
+    method = str(params.get("method", "SD"))
+    if method not in METHODS:
+        raise InvalidRequestError(f"unknown method {method!r}; choose from {sorted(METHODS)}")
+    x0, tol, max_iter = _parse(params)
+    return {**_summary(solve(x0, method, tol, max_iter)), "contour": contour_grid()}
+
+
+def run_comparison(params: dict[str, Any]) -> dict[str, Any]:
+    """Run every method from the same starting point."""
+    x0, tol, max_iter = _parse(params)
+    results = {name: _summary(solve(x0, name, tol, max_iter)) for name in METHODS}
+    return {"results": results, "contour": contour_grid()}

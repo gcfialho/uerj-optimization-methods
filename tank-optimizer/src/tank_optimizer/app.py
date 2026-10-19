@@ -1,38 +1,39 @@
-from flask import Flask, render_template, request, jsonify
+"""Flask application: serves the UI and a small JSON API."""
 
-from controllers.tank_controller import run_optimization, run_comparison
+from __future__ import annotations
 
-app = Flask(__name__)
+from typing import Any
 
-@app.route("/")
-def index():
-    """Renders the main page of the application."""
-    return render_template("index.html")
+from flask import Flask, jsonify, render_template, request
 
-@app.route("/optimize", methods=["POST"])
-def optimize():
-    """
-    Handles the optimization request for a single method.
-    Expects a JSON payload with optimization parameters.
-    """
-    data = request.json
-    if data is None:
+from tank_optimizer.service import InvalidRequestError, run_comparison, run_optimization
+
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+
+    @app.get("/")
+    def index() -> str:
+        return render_template("index.html")
+
+    @app.post("/optimize")
+    def optimize() -> Any:
+        """Run one method. JSON body: ``{D0, L0, method, tol, max_iter}``."""
+        return _handle(run_optimization)
+
+    @app.post("/compare")
+    def compare() -> Any:
+        """Run every method from the same start. JSON body: ``{D0, L0, tol, max_iter}``."""
+        return _handle(run_comparison)
+
+    return app
+
+
+def _handle(action: Any) -> Any:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON payload"}), 400
-    result = run_optimization(data)
-    return jsonify(result)
-
-@app.route("/compare", methods=["POST"])
-def compare():
-    """
-    Handles the comparison request for all optimization methods.
-    Expects a JSON payload with optimization parameters.
-    """
-    data = request.json
-    if data is None:
-        return jsonify({"error": "Invalid JSON payload"}), 400
-    result = run_comparison(data)
-    return jsonify(result)
-
-if __name__ == "__main__":
-    # Runs the Flask application in debug mode.
-    app.run(debug=True)
+    try:
+        return jsonify(action(data))
+    except InvalidRequestError as exc:
+        return jsonify({"error": str(exc)}), 400

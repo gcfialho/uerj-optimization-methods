@@ -52,6 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const exampleBtns = document.querySelectorAll('.example-card');
 
+    // Latest /compare payload, used by the replay buttons.
+    let lastComparisonData = null;
+
     // --- Plotting Constants ---
     const feasibleRegionColor = 'rgba(46, 204, 113, 0.15)';
     const contourColorScale = 'Jet';
@@ -121,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function setUILoading(isLoading) {
         if (!runBtn) return;
         runBtn.disabled = isLoading;
-        if(runBtnText) runBtnText.textContent = isLoading ? 'Calculando...' : 'Calcular';
+        if(runBtnText) runBtnText.textContent = isLoading ? 'Computing...' : 'Run';
         runBtn.classList.toggle('opacity-50', isLoading);
         runBtn.classList.toggle('cursor-not-allowed', isLoading);
     }
@@ -133,9 +136,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/optimize', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params),
             });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+
             populateIndividualResults(data);
             plotIndividualContour(data, params.method);
             plotIndividualConvergence(data);
@@ -143,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
             [individualResultsCard, individualContourCard, individualConvergenceCard].forEach(c => c?.classList.remove('hidden'));
         } catch (error) {
             console.error('Error in individual analysis:', error);
-            alert('Ocorreu um erro ao executar a otimização.');
+            alert(`Optimization failed: ${error.message}`);
         }
     }
 
@@ -153,9 +156,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/compare', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params),
             });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+
             lastComparisonData = data; // Store the latest data
 
             populateComparisonTable(data.results);
@@ -168,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
             [comparisonContourCard, comparisonConvergenceCard, comparisonTableCard].forEach(c => c?.classList.remove('hidden'));
         } catch (error) {
             console.error('Error in comparison analysis:', error);
-            alert('Ocorreu um erro ao executar a comparação.');
+            alert(`Comparison failed: ${error.message}`);
         }
     }
     
@@ -176,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateIndividualResults(data) {
         document.getElementById('res-d').textContent = data.final_D.toFixed(4);
         document.getElementById('res-l').textContent = data.final_L.toFixed(4);
-        document.getElementById('res-cost').textContent = `$${data.final_cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        document.getElementById('res-cost').textContent = `$${data.final_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         document.getElementById('res-iter').textContent = data.iterations;
         document.getElementById('res-eval').textContent = data.num_eval;
     }
@@ -184,15 +187,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateComparisonTable(results) {
         const table = document.getElementById('comparison-results-table');
         const metrics = [
-            { key: 'final_cost', name: 'Custo Final ($)', format: (v) => `$${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
-            { key: 'iterations', name: 'Iterações' },
-            { key: 'num_eval', name: 'Avaliações da Função' },
-            { key: 'final_D', name: 'Diâmetro Final (D*)', format: (v) => v.toFixed(4) },
-            { key: 'final_L', name: 'Comp. Final (L*)', format: (v) => v.toFixed(4) },
+            { key: 'final_cost', name: 'Final Cost ($)', format: (v) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+            { key: 'iterations', name: 'Iterations' },
+            { key: 'num_eval', name: 'Function Evaluations' },
+            { key: 'num_grad', name: 'Gradient Evaluations' },
+            { key: 'final_D', name: 'Final Diameter (D*) [m]', format: (v) => v.toFixed(4) },
+            { key: 'final_L', name: 'Final Length (L*) [m]', format: (v) => v.toFixed(4) },
+            { key: 'final_volume', name: 'Volume [m³]', format: (v) => v.toFixed(4) },
+            { key: 'converged', name: 'Converged (‖∇f‖ ≤ ε)', format: (v) => (v ? 'yes' : 'no') },
         ];
         const methods = Object.keys(results).sort((a,b) => a.localeCompare(b));
 
-        let headerHtml = '<thead><tr><th>Métrica</th>';
+        let headerHtml = '<thead><tr><th>Metric</th>';
         methods.forEach(m => headerHtml += `<th>${m}</th>`);
         headerHtml += '</tr></thead>';
         
@@ -210,10 +216,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Animation Functions ---
-    let animationFrameId = null;
+    // One pending frame per plot, so animating one plot never cancels the other.
+    const animationFrameIds = {};
 
     function animateTraces(plotId, tracesToAnimate, traceIndices, animationSpeed = 20) {
-        cancelAnimationFrame(animationFrameId);
+        cancelAnimationFrame(animationFrameIds[plotId]);
 
         const plotDiv = document.getElementById(plotId);
         if (!plotDiv.data) return;
@@ -267,11 +274,11 @@ document.addEventListener('DOMContentLoaded', () => {
             Plotly.restyle(plotId, updateData, indices);
 
             currentPoint++;
-            animationFrameId = requestAnimationFrame(animationLoop);
+            animationFrameIds[plotId] = requestAnimationFrame(animationLoop);
         }
 
         setTimeout(() => {
-            animationFrameId = requestAnimationFrame(animationLoop);
+            animationFrameIds[plotId] = requestAnimationFrame(animationLoop);
         }, animationSpeed);
     }
 
@@ -309,16 +316,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return layout;
     }
 
+    // Feasible set: V_min <= pi D^2 L / 4 <= V_max, D <= D_max, L <= L_max (limits come from the API).
     function getFeasibleRegionTrace(contourData) {
-        const V0 = 0.8, V_min = 0.9 * V0, V_max = 1.1 * V0;
-        const D_vals = contourData.d;
-        const l_min_func = D => 4 * V_min / (Math.PI * D * D);
-        const l_max_func = D => 4 * V_max / (Math.PI * D * D);
+        const { v_min, v_max, d_max, l_max } = contourData.limits;
+        const lAt = (V, D) => Math.min(4 * V / (Math.PI * D * D), l_max);
+        const D_vals = contourData.d.filter(D => D <= d_max && lAt(v_min, D) < l_max);
         return {
             x: D_vals.concat(D_vals.slice().reverse()),
-            y: D_vals.map(l_max_func).concat(D_vals.slice().reverse().map(l_min_func)),
+            y: D_vals.map(D => lAt(v_max, D)).concat(D_vals.slice().reverse().map(D => lAt(v_min, D))),
             fill: 'toself', fillcolor: feasibleRegionColor, line: { color: 'transparent' },
-            type: 'scatter', hoverinfo: 'none', name: 'Região Viável'
+            type: 'scatter', hoverinfo: 'none', name: 'Feasible region'
         };
     }
 
@@ -328,16 +335,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const history = np.array(data.history);
         const pathTrace = {
             x: history.getColumn(0), y: history.getColumn(1),
-            mode: 'lines+markers', type: 'scatter', name: `Trajetória ${methodName}`,
+            mode: 'lines+markers', type: 'scatter', name: `${methodName} path`,
             marker: { color: pathColors[methodName] || '#FFF', size: 6, symbol: 'circle' },
             line: { color: pathColors[methodName] || '#FFF', width: 2 }
         };
-        Plotly.newPlot('contour-plot', [feasibleRegion, contourTrace, pathTrace], getPlotLayout('Curvas de Nível e Trajetória', 'Diâmetro (D)', 'Comprimento (L)'), {responsive: true});
+        Plotly.newPlot('contour-plot', [feasibleRegion, contourTrace, pathTrace], getPlotLayout('Cost Contours and Trajectory', 'Diameter D [m]', 'Length L [m]'), {responsive: true});
     }
     
     function plotIndividualConvergence(data) {
-        const trace = { x: Array.from({length: data.errors.length}, (_, i) => i + 1), y: data.errors, mode: 'lines+markers', type: 'scatter' };
-        const layout = getPlotLayout('Convergência do Gradiente', 'Iteração', '||∇C(Dk, Lk)||}');
+        const trace = { x: Array.from({length: data.errors.length}, (_, i) => i), y: data.errors, mode: 'lines+markers', type: 'scatter' };
+        const layout = getPlotLayout('Gradient Convergence', 'Iteration', '‖∇φ(D<sub>k</sub>, L<sub>k</sub>)‖ (current subproblem)');
         layout.yaxis.type = 'log';
         layout.yaxis.autorange = true;
         Plotly.newPlot('convergence-plot', [trace], layout, {responsive: true});
@@ -375,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const trace = {
                 x: [x_hist[0]], // Start with the first point
                 y: [y_hist[0]],
-                mode: 'lines+markers', type: 'scatter', name: `Trajetória ${methodName}`,
+                mode: 'lines+markers', type: 'scatter', name: `${methodName} path`,
                 marker: { color: pathColors[methodName] || '#FFF', size: 6, symbol: 'circle' },
                 line: { color: pathColors[methodName] || '#FFF', width: 2 }
             };
@@ -398,9 +405,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const xrange = [min_x - padding_x, max_x + padding_x];
             const yrange = [min_y - padding_y, 5]; // Y-axis maximum fixed at 5
             
-            layout = getPlotLayout('Comparação das Trajetórias', 'Diâmetro (D)', 'Comprimento (L)', xrange, yrange);
+            layout = getPlotLayout('Trajectories', 'Diameter D [m]', 'Length L [m]', xrange, yrange);
         } else {
-            layout = getPlotLayout('Comparação das Trajetórias', 'Diâmetro (D)', 'Comprimento (L)');
+            layout = getPlotLayout('Trajectories', 'Diameter D [m]', 'Length L [m]');
         }
         
         Plotly.newPlot('comparison-contour-plot', traces, layout, {responsive: true}).then(() => {
@@ -417,20 +424,20 @@ document.addEventListener('DOMContentLoaded', () => {
         methods.forEach(methodName => {
             const result = results[methodName];
             if (result && result.errors && result.errors.length > 0) {
-                const x_data = Array.from({length: result.errors.length}, (_, i) => i + 1);
+                const x_data = Array.from({length: result.errors.length}, (_, i) => i);
                 const y_data = result.errors;
 
                 traces.push({
                     x: [x_data[0]], // Start with the first point
                     y: [y_data[0]],
-                    mode: 'lines+markers', type: 'scatter', name: `Conv. ${methodName}`,
+                    mode: 'lines+markers', type: 'scatter', name: methodName,
                     line: { color: pathColors[methodName] || '#FFFFFF' }
                 });
                 tracesToAnimate.push({ x: x_data, y: y_data });
             }
         });
 
-        const layout = getPlotLayout('Comparação da Convergência', 'Iteração', '||∇C(Dk, Lk)||}');
+        const layout = getPlotLayout('Gradient Convergence', 'Iteration', '‖∇φ(D<sub>k</sub>, L<sub>k</sub>)‖ (current subproblem)');
         layout.yaxis.type = 'log';
         layout.yaxis.autorange = true;
         

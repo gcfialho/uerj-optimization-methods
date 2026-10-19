@@ -1,175 +1,268 @@
-"""Implementations of optimization algorithms: Steepest Descent, Newton, and DFP."""
+"""Gradient-based line-search methods: Steepest Descent, Newton and DFP (quasi-Newton).
+
+All methods share one loop: pick a search direction ``p_k``, fall back to ``-g_k`` if
+``p_k`` is not a descent direction, choose a step with Armijo backtracking and stop when
+``||g_k|| <= tol``. Exact derivatives are used when supplied, central finite differences
+otherwise (see :class:`Objective`).
+"""
+
+from __future__ import annotations
+
+import logging
+import math
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Callable, List, Type
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
-# --- Wrapper for Evaluation Counting ---
-class FunctionWrapper:
-    """Wraps the objective function to count the number of evaluations."""
-    def __init__(self, fun: Callable[[NDArray[np.float64]], float]):
+__all__ = [
+    "DFP",
+    "METHODS",
+    "BaseOptimizer",
+    "Newton",
+    "Objective",
+    "OptimizeResult",
+    "SteepestDescent",
+    "minimize",
+]
+
+logger = logging.getLogger(__name__)
+
+FloatArray = NDArray[np.float64]
+
+
+class Objective:
+    """Objective with optional exact derivatives; counts every evaluation.
+
+    Missing derivatives are approximated by central finite differences: the gradient from
+    ``f`` (``2n`` calls, counted in ``nfev``), the Hessian from the gradient when it is
+    available (``2n`` gradient calls) and from ``f`` otherwise (4-point stencil).
+    """
+
+    def __init__(
+        self,
+        fun: Callable[[FloatArray], float],
+        grad: Callable[[FloatArray], FloatArray] | None = None,
+        hess: Callable[[FloatArray], FloatArray] | None = None,
+        grad_step: float = 1e-8,
+        hess_step: float = 1e-5,
+    ) -> None:
         self.fun = fun
-        self.eval_count = 0
-        self.grad_eval_count = 0
+        self._grad = grad
+        self._hess = hess
+        self.grad_step = grad_step
+        self.hess_step = hess_step
+        self.nfev = self.ngev = self.nhev = 0
 
-    def __call__(self, x: NDArray[np.float64]) -> float:
-        self.eval_count += 1
-        return self.fun(x)
+    def __call__(self, x: FloatArray) -> float:
+        self.nfev += 1
+        return float(self.fun(x))
 
-    def grad(self, x: NDArray[np.float64], delta: float = 1e-8) -> NDArray[np.float64]:
-        self.grad_eval_count += 1
-        grad = np.zeros_like(x, dtype=float)
-        for i in range(len(x)):
-            x_plus_delta = np.copy(x)
-            x_plus_delta[i] += delta
-            x_minus_delta = np.copy(x)
-            x_minus_delta[i] -= delta
-            grad[i] = (self(x_plus_delta) - self(x_minus_delta)) / (2 * delta)
-        return grad
+    def grad(self, x: FloatArray) -> FloatArray:
+        self.ngev += 1
+        if self._grad is not None:
+            return np.asarray(self._grad(x), dtype=float)
+        h = self.grad_step
+        return np.array([(self(x + e) - self(x - e)) / (2 * h) for e in h * np.eye(x.size)])
 
-# --- Base Optimizer Class ---
-class BaseOptimizer(ABC):
-    """Abstract base class for optimizers."""
-    def __init__(self, fun: FunctionWrapper, x0: NDArray[np.float64], tol: float, max_iter: int):
-        self.fun = fun
-        self.x = np.copy(x0)
-        self.tol = tol
-        self.max_iter = max_iter
-        self.history: List[NDArray[np.float64]] = [np.copy(x0)]
-        self.errors: List[float] = []
-
-    def _line_search(self, x: NDArray[np.float64], p: NDArray[np.float64]) -> float:
-        """Performs backtracking line search to find a suitable step size."""
-        alpha = 1.0
-        c = 1e-4
-        rho = 0.5
-        g = self.fun.grad(x)
-        
-        # The check for the descent direction has been moved to the `optimize` loop.
-        while self.fun(x + alpha * p) > self.fun(x) + c * alpha * (p @ g):
-            alpha *= rho
-            if alpha < 1e-10:
-                return 1e-10
-        return alpha
-
-    def optimize(self) -> Dict[str, Any]:
-        """Main optimization loop."""
-        k = 0
-        g = self.fun.grad(self.x)
-        self.errors.append(float(np.linalg.norm(g)))
-
-        while np.linalg.norm(g) > self.tol and k < self.max_iter:
-            p = self._get_direction(g)
-            
-            # Ensures that p is a descent direction.
-            # If not, use the gradient direction as a fallback for the iteration.
-            if np.dot(p, g) >= 0:
-                p = -g
-
-            alpha = self._line_search(self.x, p)
-            self.x += alpha * p
-            self.history.append(np.copy(self.x))
-            g = self.fun.grad(self.x)
-            self.errors.append(float(np.linalg.norm(g)))
-            k += 1
-
-        return {
-            "x": self.x, "fun": self.fun(self.x), "grad": g,
-            "history": self.history, "errors": self.errors,
-            "fun_evals": self.fun.eval_count
-        }
-
-    @abstractmethod
-    def _get_direction(self, g: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Calculates the search direction (specific to each method)."""
-        pass
-
-# --- Method Implementations ---
-class SteepestDescent(BaseOptimizer):
-    """Steepest Descent with line search."""
-    def _get_direction(self, g: NDArray[np.float64]) -> NDArray[np.float64]:
-        return -g
-
-class Newton(BaseOptimizer):
-    """Newton's method with line search and fallback."""
-    def _get_hessian(self, x: NDArray[np.float64], delta: float = 1e-5) -> NDArray[np.float64]:
-        n = len(x)
-        H = np.zeros((n, n), dtype=float)
+    def hessian(self, x: FloatArray) -> FloatArray:
+        self.nhev += 1
+        if self._hess is not None:
+            return np.asarray(self._hess(x), dtype=float)
+        h, n = self.hess_step, x.size
+        e = h * np.eye(n)
+        if self._grad is not None:
+            H = np.column_stack([(self.grad(x + ej) - self.grad(x - ej)) / (2 * h) for ej in e])
+            return (H + H.T) / 2
+        H = np.empty((n, n))
         for i in range(n):
-            for j in range(n):
-                x_pp = x.copy(); x_pp[i] += delta; x_pp[j] += delta
-                x_pm = x.copy(); x_pm[i] += delta; x_pm[j] -= delta
-                x_mp = x.copy(); x_mp[i] -= delta; x_mp[j] += delta
-                x_mm = x.copy(); x_mm[i] -= delta; x_mm[j] -= delta
-                H[i, j] = (self.fun(x_pp) - self.fun(x_pm) - self.fun(x_mp) + self.fun(x_mm)) / (4 * delta**2)
+            for j in range(i, n):
+                H[i, j] = H[j, i] = (
+                    self(x + e[i] + e[j])
+                    - self(x + e[i] - e[j])
+                    - self(x - e[i] + e[j])
+                    + self(x - e[i] - e[j])
+                ) / (4 * h * h)
         return H
 
-    def _get_direction(self, g: NDArray[np.float64]) -> NDArray[np.float64]:
-        H = self._get_hessian(self.x)
+
+@dataclass(slots=True)
+class OptimizeResult:
+    x: FloatArray
+    fun: float
+    nit: int
+    nfev: int
+    ngev: int
+    nhev: int
+    converged: bool
+    message: str
+    history: list[FloatArray]
+    grad_norms: list[float]
+
+
+class BaseOptimizer(ABC):
+    """Shared line-search loop; subclasses only provide the search direction."""
+
+    #: Armijo sufficient-decrease constant and backtracking factor.
+    c1 = 1e-4
+    backtrack = 0.5
+    min_step = 1e-10
+
+    def __init__(
+        self,
+        fun: Objective,
+        x0: ArrayLike,
+        tol: float = 1e-6,
+        max_iter: int = 200,
+        stop_when: Callable[[FloatArray], bool] | None = None,
+    ) -> None:
+        self.fun = fun
+        self.x = np.array(x0, dtype=float)
+        self.tol = tol
+        self.max_iter = max_iter
+        self.stop_when = stop_when  # optional extra stopping test, checked after each step
+
+    @abstractmethod
+    def direction(self, x: FloatArray, g: FloatArray) -> FloatArray:
+        """Search direction at ``x`` with gradient ``g``."""
+
+    def reset(self) -> None:  # noqa: B027 (optional hook, no-op by default)
+        """Called when the direction had to fall back to ``-g``."""
+
+    def update(self, s: FloatArray, y: FloatArray) -> None:  # noqa: B027 (optional hook)
+        """Called after each step with ``s = x_{k+1} - x_k`` and ``y = g_{k+1} - g_k``."""
+
+    def line_search(
+        self, x: FloatArray, fx: float, g: FloatArray, p: FloatArray
+    ) -> tuple[float, float]:
+        """Backtrack until ``f(x + a p) <= f(x) + c1 a g^T p`` (Armijo); return ``(a, f)``.
+
+        Returns ``a = 0`` when no acceptable step larger than ``min_step`` exists.
+        """
+        alpha, slope = 1.0, float(g @ p)
+        while alpha >= self.min_step:
+            f_new = self.fun(x + alpha * p)
+            if f_new <= fx + self.c1 * alpha * slope:
+                return alpha, f_new
+            alpha *= self.backtrack
+        return 0.0, fx
+
+    def optimize(self) -> OptimizeResult:
+        x = self.x
+        fx = self.fun(x)
+        g = self.fun.grad(x)
+        history, grad_norms = [x.copy()], [float(np.linalg.norm(g))]
+        converged, message = False, "Maximum number of iterations reached."
+        nit = 0
+        while True:
+            if grad_norms[-1] <= self.tol:
+                converged, message = True, "Gradient norm below tolerance."
+                break
+            if self.stop_when is not None and nit > 0 and self.stop_when(x):
+                converged, message = True, "Stopping condition met."
+                break
+            if nit >= self.max_iter:
+                break
+            p = self.direction(x, g)
+            if not np.all(np.isfinite(p)) or p @ g >= 0:
+                p = -g
+                self.reset()
+            alpha, f_new = self.line_search(x, fx, g, p)
+            if alpha == 0.0:
+                message = "Line search could not decrease f (precision limit of the gradient)."
+                break
+            x_new = x + alpha * p
+            g_new = self.fun.grad(x_new)
+            self.update(x_new - x, g_new - g)
+            x, g, fx = x_new, g_new, f_new
+            nit += 1
+            history.append(x.copy())
+            grad_norms.append(float(np.linalg.norm(g)))
+        self.x = x
+        logger.debug("%s: %s nit=%d nfev=%d", type(self).__name__, message, nit, self.fun.nfev)
+        return OptimizeResult(
+            x=x,
+            fun=fx,
+            nit=nit,
+            nfev=self.fun.nfev,
+            ngev=self.fun.ngev,
+            nhev=self.fun.nhev,
+            converged=converged,
+            message=message,
+            history=history,
+            grad_norms=grad_norms,
+        )
+
+
+class SteepestDescent(BaseOptimizer):
+    """``p_k = -g_k``."""
+
+    def direction(self, x: FloatArray, g: FloatArray) -> FloatArray:
+        return -g
+
+
+class Newton(BaseOptimizer):
+    """``p_k = -H_k^{-1} g_k`` with a finite-difference Hessian."""
+
+    max_step_norm = 100.0
+
+    def direction(self, x: FloatArray, g: FloatArray) -> FloatArray:
         try:
-            # Using 'solve' is numerically more stable and efficient than 'inv'
-            p = np.linalg.solve(H, -g).astype(np.float64)
-            # Safety check: if the step is too large, the Hessian
-            # is likely ill-conditioned. Use the gradient as a fallback.
-            if np.linalg.norm(p) > 100:
-                return -g
-            return p
+            p = np.linalg.solve(self.fun.hessian(x), -g)
         except np.linalg.LinAlgError:
-            return -g # Fallback to gradient if the Hessian is singular
+            return -g
+        # A huge Newton step means an ill-conditioned Hessian; use the gradient instead.
+        return -g if np.linalg.norm(p) > self.max_step_norm else p
+
 
 class DFP(BaseOptimizer):
-    """Davidon-Fletcher-Powell (DFP) method."""
-    def __init__(self, fun: FunctionWrapper, x0: NDArray[np.float64], tol: float, max_iter: int):
-        super().__init__(fun, x0, tol, max_iter)
-        self.B = np.eye(len(x0))  # Approximation of the Inverse Hessian
+    """Davidon-Fletcher-Powell: ``p_k = -B_k g_k`` with ``B_k`` approximating ``H^{-1}``.
 
-    def optimize(self) -> Dict[str, Any]:
-        k = 0
-        g = self.fun.grad(self.x)
-        self.errors.append(float(np.linalg.norm(g)))
+    ``B_{k+1} = B_k + s s^T / (s^T y) - B_k y y^T B_k / (y^T B_k y)``, applied only when
+    the curvature condition ``s^T y > 0`` holds, which keeps ``B`` positive definite.
+    """
 
-        while np.linalg.norm(g) > self.tol and k < self.max_iter:
-            p = -self.B @ g
-            
-            # Safety check: ensure p is a descent direction.
-            # If the B matrix is not positive definite, the direction might be wrong.
-            if np.dot(p, g) >= 0:
-                # Fallback to steepest descent and reset the Hessian approximation
-                p = -g
-                self.B = np.eye(len(self.x))
-            
-            x_old = self.x
-            g_old = g
-            
-            alpha = self._line_search(self.x, p)
-            self.x = self.x + alpha * p
-            self.history.append(np.copy(self.x))
-            
-            g = self.fun.grad(self.x)
-            self.errors.append(float(np.linalg.norm(g)))
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.B = np.eye(self.x.size)
 
-            s = self.x - x_old
-            y = g - g_old
+    def direction(self, x: FloatArray, g: FloatArray) -> FloatArray:
+        return -self.B @ g
 
-            s_dot_y = s @ y
-            y_B_y = y @ self.B @ y
+    def reset(self) -> None:
+        self.B = np.eye(self.x.size)
 
-            # Update the Hessian approximation (B) only if it is numerically stable
-            if np.abs(s_dot_y) > 1e-10 and np.abs(y_B_y) > 1e-10:
-                term1 = np.outer(s, s) / s_dot_y
-                term2 = - (self.B @ np.outer(y, y) @ self.B) / y_B_y
-                self.B += term1 + term2
-            
-            k += 1
+    def update(self, s: FloatArray, y: FloatArray) -> None:
+        sy = float(s @ y)
+        By = self.B @ y
+        yBy = float(y @ By)
+        if sy <= 1e-12 * np.linalg.norm(s) * np.linalg.norm(y) or yBy <= 0 or not math.isfinite(sy):
+            return
+        self.B += np.outer(s, s) / sy - np.outer(By, By) / yBy
 
-        return {
-            "x": self.x, "fun": self.fun(self.x), "grad": g,
-            "history": self.history, "errors": self.errors,
-            "fun_evals": self.fun.eval_count
-        }
 
-    def _get_direction(self, g: NDArray[np.float64]) -> NDArray[np.float64]:
-        # In DFP, the direction is calculated directly in the main loop.
-        # This method is not used but needs to be implemented.
-        return np.zeros_like(g)
+METHODS: dict[str, type[BaseOptimizer]] = {
+    "SD": SteepestDescent,
+    "Newton": Newton,
+    "DFP": DFP,
+}
+
+
+def minimize(
+    fun: Callable[[FloatArray], float],
+    x0: ArrayLike,
+    method: str = "DFP",
+    *,
+    grad: Callable[[FloatArray], FloatArray] | None = None,
+    hess: Callable[[FloatArray], FloatArray] | None = None,
+    tol: float = 1e-6,
+    max_iter: int = 200,
+) -> OptimizeResult:
+    """Minimize ``fun`` from ``x0`` with one of :data:`METHODS` (``SD``, ``Newton``, ``DFP``)."""
+    try:
+        cls = METHODS[method]
+    except KeyError:
+        raise ValueError(f"unknown method {method!r}; choose from {sorted(METHODS)}") from None
+    return cls(Objective(fun, grad, hess), x0, tol=tol, max_iter=max_iter).optimize()
