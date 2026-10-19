@@ -3,7 +3,7 @@
 Examples::
 
     nelder-mead --function rosenbrock --dim 2 --animate
-    nelder-mead --all --animate --output-dir nelder-mead/results --gif-dir docs/assets
+    nelder-mead --all --animate --output-dir nelder-mead/results --gif-dir docs/img
     nelder-mead --function sphere --dim 5 --compare-scipy
 """
 
