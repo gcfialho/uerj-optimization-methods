@@ -6,13 +6,22 @@ A Nelder-Mead simplex solver that matches SciPy step for step, and a constrained
 
 ![Nelder-Mead on the Rosenbrock function: simplex over log-scaled contours and convergence curves](docs/img/rosenbrock-2d.gif)
 
+**Try it in the browser, in English or Portuguese:** <https://gcfialho.github.io/uerj-optimization-methods/>. The lab runs
+both packages, unmodified, with [Pyodide](https://pyodide.org) (Python compiled to WebAssembly), so the page executes the
+same code the tests cover and nothing is sent to a server.
+
+| Tank design: SD, Newton and DFP from one start | Nelder-Mead, step by step, with adjustable coefficients |
+|---|---|
+| [![Tank lab](docs/img/lab-tank.png)](https://gcfialho.github.io/uerj-optimization-methods/#tank) | [![Nelder-Mead lab](docs/img/lab-nelder-mead.png)](https://gcfialho.github.io/uerj-optimization-methods/#nm) |
+
 ## Highlights
 
 - **Algorithm from its definition, checked against a reference.** Nelder-Mead in the formulation of Lagarias et al. (1998). On every bundled problem it needs the same number of iterations and function evaluations as `scipy.optimize.minimize(method="Nelder-Mead")`, and the final points agree to 1e-14.
 - **Invariants as tests.** Every iteration keeps the vertices sorted, the best value never increases, and each operation scales the simplex volume by its theoretical factor ($\alpha$, $\alpha\gamma$, $\alpha\rho$, $\rho$, $\sigma^n$). All five branches, shrink included, are exercised.
 - **Constrained optimization done carefully.** The tank problem is solved with an exterior penalty until the design is feasible, then a log barrier with a decreasing weight. Gradients and Hessians are exact, checked against finite differences. Newton reaches the optimum, to within \$0.01, from every start tested.
 - **Debugging numerical failures.** The original version reported infeasible designs as optimal: near $f \approx 10^{12}$, finite differences return a gradient of exactly zero. That root cause is documented and fixed (see [tank-optimizer](tank-optimizer/README.md#changes-from-the-original-coursework-version)).
-- **Packaged and reproducible.** uv workspace, src layouts, typed code, two CLIs, ruff, 88 pytest tests, and GitHub Actions on Python 3.12 and 3.13.
+- **Runs in the browser.** A static lab on GitHub Pages loads the two packages into Pyodide. `web/lab.py` is the only glue, and its payloads are tested in CPython before every deploy.
+- **Packaged and reproducible.** uv workspace, src layouts, typed code, two CLIs, ruff, 94 pytest tests, and GitHub Actions on Python 3.12 and 3.13.
 
 ## Quickstart
 
@@ -191,7 +200,7 @@ The tests cover:
 - In the last barrier subproblem the curvature is around $10^9$ to $10^{10}$. Once $\lVert\nabla\phi\rVert$ is small, the decrease a step can achieve falls below the float spacing of $\phi \approx 5.4 \times 10^3$ (about $10^{-12}$), so the line search cannot confirm it. DFP usually stops there, at the same design as Newton, without meeting `tol = 1e-6`. A BFGS update and a termination test scaled to $f$ are the natural next steps.
 - The final barrier weight ($\mu = 0.01$) leaves the design strictly inside the feasible set, at a cost \$0.01 above $C^*$.
 - The weld-length model, two circumferential seams per end plate at the mean diameter, comes from the original coursework. The problem statement it was based on is not part of this repository.
-- The UI loads Tailwind and Plotly from CDNs and runs on Flask's development server. It is meant for local use only.
+- The Flask UI runs on Flask's development server and is meant for local use. The public lab replaces it on the web: it needs no server, but its first load downloads about 10 MB (Pyodide and NumPy) from jsDelivr.
 - Nelder-Mead has no bound constraints and no adaptive coefficients for high dimensions, and animations are limited to 2-D and 3-D.
 
 Coursework for the Optimization course at UERJ (Instituto Politécnico), taught by Prof. [Gustavo Libotte](https://github.com/gustavolibotte).
