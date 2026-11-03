@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 
 from nelder_mead.functions import FUNCTIONS, PROBLEMS, Problem, get_problem
-from nelder_mead.optimizer import Result, minimize
+from nelder_mead.optimizer import FloatArray, Result, minimize
 
 logger = logging.getLogger("nelder_mead")
 
@@ -75,8 +75,13 @@ def _compare_scipy(problem: Problem, result: Result, args: argparse.Namespace) -
     except ImportError:
         logger.error("--compare-scipy needs SciPy (`uv sync` installs it with the dev group)")
         return
+    func = problem.function.func
+
+    def objective(x: FloatArray) -> float:
+        return float(func(x))  # the benchmarks are vectorized; SciPy expects a scalar
+
     ref = scipy_minimize(
-        problem.function.func,
+        objective,
         problem.initial_simplex[0],
         method="Nelder-Mead",
         options={
