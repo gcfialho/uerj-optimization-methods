@@ -11,6 +11,8 @@ from nelder_mead import PROBLEMS, minimize
 
 LAB = Path(__file__).resolve().parents[1] / "lab.py"
 spec = importlib.util.spec_from_file_location("lab", LAB)
+assert spec is not None
+assert spec.loader is not None
 lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
 

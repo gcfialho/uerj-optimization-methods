@@ -117,7 +117,7 @@ def reference_optimum() -> tuple[np.ndarray, float]:
         options={"xatol": 1e-12},
     )
     x = np.array([res.x, length(res.x)])
-    assert is_feasible(*x, tol=1e-12)
+    assert is_feasible(x[0], x[1], tol=1e-12)
     return x, float(res.fun)
 
 
@@ -202,6 +202,7 @@ def test_dfp_steps_satisfy_strong_wolfe() -> None:
     for _ in range(10):
         p = opt.direction(x, g)
         alpha, f_new, g_new = opt.line_search(x, fx, g, p)
+        assert g_new is not None  # the strong-Wolfe search always returns the new gradient
         assert alpha > 0
         assert f_new <= fx + opt.c1 * alpha * (g @ p)
         assert abs(g_new @ p) <= opt.c2 * abs(g @ p)
