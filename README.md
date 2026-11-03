@@ -175,7 +175,7 @@ The final subproblem must satisfy $\lVert\nabla\phi_\mu\rVert \le$ `tol` (defaul
 ## Testing
 
 ```bash
-uv run pytest                                        # 88 tests
+uv run pytest                                        # 94 tests
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                                          # strict, over both packages, tests and web/lab.py
 ```
