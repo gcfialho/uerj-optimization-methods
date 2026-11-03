@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratório de otimização · Optimization lab</title>
+  <meta name="description" content="Run Nelder-Mead and a constrained tank-design optimizer (Steepest Descent, Newton, DFP) in your browser. The same tested Python code, through Pyodide. Em português e inglês.">
+  <meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e131a" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23121a24'/%3E%3Cpath d='M12 50 L32 14 L52 46 Z' fill='none' stroke='%233cc7a9' stroke-width='4' stroke-linejoin='round'/%3E%3Ccircle cx='38' cy='38' r='5' fill='%23e6ebf0'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="app.css">
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a href="#main" class="skip-link" data-i18n="skip">Pular para o conteúdo</a>
+  <header class="top">
+    <div class="wrap top-row">
+      <div>
+        <h1 data-i18n="title">Laboratório de otimização</h1>
+        <p class="subtitle" data-i18n="subtitle">O mesmo código Python testado, rodando no seu navegador</p>
+      </div>
+      <div class="top-actions">
+        <a class="gh" href="https://github.com/gcfialho/uerj-optimization-methods">GitHub</a>
+        <div class="lang" role="group" aria-label="Idioma" data-i18n-label="language">
+          <button type="button" data-lang="pt" aria-pressed="true">PT</button>
+          <button type="button" data-lang="en" aria-pressed="false">EN</button>
+        </div>
+      </div>
+    </div>
+    <div class="wrap">
+      <nav class="tabs" role="tablist" aria-label="Seções">
+        <button type="button" role="tab" data-tab="tank" data-i18n="tabs.tank">Projeto do tanque</button>
+        <button type="button" role="tab" data-tab="nm" data-i18n="tabs.nm">Nelder-Mead</button>
+        <span class="tab-indicator" aria-hidden="true"></span>
+      </nav>
+    </div>
+  </header>
+
+  <div class="status" data-status role="status" aria-live="polite"></div>
+
+  <main id="main" class="wrap layout">
+    <aside class="controls" data-controls></aside>
+    <section class="results" data-results aria-live="polite"></section>
+  </main>
+
+  <footer class="wrap footer">
+    <p data-i18n="footer">Python roda localmente via Pyodide (WebAssembly). Nada é enviado a servidor.</p>
+  </footer>
+  <noscript><p class="wrap">This lab needs JavaScript. The code and a CLI are in the <a href="https://github.com/gcfialho/uerj-optimization-methods">repository</a>.</p></noscript>
+</body>
+</html>

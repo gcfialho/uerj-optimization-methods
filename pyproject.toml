@@ -26,7 +26,7 @@ nelder-mead = { workspace = true }
 tank-optimizer = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["nelder-mead/tests", "tank-optimizer/tests"]
+testpaths = ["nelder-mead/tests", "tank-optimizer/tests", "web/tests"]
 addopts = ["--import-mode=importlib", "-ra"]
 
 [tool.ruff]
