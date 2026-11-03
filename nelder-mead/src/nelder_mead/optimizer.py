@@ -24,6 +24,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import SupportsFloat
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -40,7 +41,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 FloatArray = NDArray[np.float64]
-Objective = Callable[[FloatArray], float]
+Objective = Callable[[FloatArray], SupportsFloat]  # converted with float() on every call
 
 
 class Step(StrEnum):

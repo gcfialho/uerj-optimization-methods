@@ -21,7 +21,7 @@ same code the tests cover and nothing is sent to a server.
 - **Constrained optimization done carefully.** The tank problem is solved with an exterior penalty until the design is feasible, then a log barrier with a decreasing weight. Gradients and Hessians are exact, checked against finite differences. Newton reaches the optimum, to within \$0.01, from every start tested.
 - **Debugging numerical failures.** The original version reported infeasible designs as optimal: near $f \approx 10^{12}$, finite differences return a gradient of exactly zero. That root cause is documented and fixed (see [tank-optimizer](tank-optimizer/README.md#changes-from-the-original-coursework-version)).
 - **Runs in the browser.** A static lab on GitHub Pages loads the two packages into Pyodide. `web/lab.py` is the only glue, and its payloads are tested in CPython before every deploy.
-- **Packaged and reproducible.** uv workspace, src layouts, typed code, two CLIs, ruff, 94 pytest tests, and GitHub Actions on Python 3.12 and 3.13.
+- **Packaged and reproducible.** uv workspace, src layouts, typed code checked with `mypy --strict`, two CLIs, ruff, 94 pytest tests, and GitHub Actions on Python 3.12 and 3.13.
 
 ## Quickstart
 
@@ -159,7 +159,7 @@ The final subproblem must satisfy $\lVert\nabla\phi_\mu\rVert \le$ `tol` (defaul
 
 ```
 .
-├── pyproject.toml              # uv workspace root: members, dev tools, ruff + pytest config
+├── pyproject.toml              # uv workspace root: members, dev tools, ruff, mypy and pytest config
 ├── uv.lock
 ├── nelder-mead/
 │   ├── src/nelder_mead/        # optimizer, functions, visualize, cli
@@ -175,8 +175,9 @@ The final subproblem must satisfy $\lVert\nabla\phi_\mu\rVert \le$ `tol` (defaul
 ## Testing
 
 ```bash
-uv run pytest                                        # 88 tests
+uv run pytest                                        # 94 tests
 uv run ruff check . && uv run ruff format --check .
+uv run mypy                                          # strict, over both packages, tests and web/lab.py
 ```
 
 The tests cover:

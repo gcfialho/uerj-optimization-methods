@@ -17,6 +17,7 @@ from matplotlib import animation
 from matplotlib.axes import Axes
 from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
+from matplotlib.gridspec import SubplotSpec
 from matplotlib.patches import Polygon
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -39,7 +40,9 @@ Update = Callable[[int], None]
 def _frame_indices(n_states: int, max_frames: int, hold: int) -> list[int]:
     """Evenly subsample long runs and hold the final simplex for a few frames."""
     if n_states > max_frames:
-        idx = np.unique(np.linspace(0, n_states - 1, max_frames).round().astype(int)).tolist()
+        idx: list[int] = np.unique(
+            np.linspace(0, n_states - 1, max_frames).round().astype(int)
+        ).tolist()
     else:
         idx = list(range(n_states))
     return idx + [n_states - 1] * hold
@@ -80,7 +83,9 @@ def _convergence_panel(ax: Axes, result: Result) -> Update:
     return update
 
 
-def _simplex_panel_2d(fig: Figure, spec, problem: Problem, result: Result) -> tuple[Axes, Update]:
+def _simplex_panel_2d(
+    fig: Figure, spec: SubplotSpec, problem: Problem, result: Result
+) -> tuple[Axes, Update]:
     ax = fig.add_subplot(spec)
     (x_min, x_max), (y_min, y_max) = problem.bounds or _auto_bounds(problem, result)
     xs, ys = np.linspace(x_min, x_max, 300), np.linspace(y_min, y_max, 300)
@@ -109,7 +114,9 @@ def _simplex_panel_2d(fig: Figure, spec, problem: Problem, result: Result) -> tu
     return ax, update
 
 
-def _simplex_panel_3d(fig: Figure, spec, problem: Problem, result: Result) -> tuple[Axes, Update]:
+def _simplex_panel_3d(
+    fig: Figure, spec: SubplotSpec, problem: Problem, result: Result
+) -> tuple[Axes, Update]:
     ax: Axes3D = fig.add_subplot(spec, projection="3d")
     x_lim, y_lim, z_lim = problem.bounds or _auto_bounds(problem, result)
     ax.set(xlim=x_lim, ylim=y_lim, zlim=z_lim, xlabel="$x_1$", ylabel="$x_2$", zlabel="$x_3$")

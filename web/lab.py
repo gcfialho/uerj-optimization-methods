@@ -8,6 +8,7 @@ CLIs. Every function takes and returns plain JSON-ready values.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -117,7 +118,7 @@ def call(name: str, payload: str) -> str:
     """Entry point for JavaScript: JSON in, JSON out, errors as ``{"error": message}``."""
     import json
 
-    functions = {"nm_functions": nm_functions, "nm_run": nm_run}
+    functions: dict[str, Callable[..., object]] = {"nm_functions": nm_functions, "nm_run": nm_run}
     functions |= {"tank_run": tank_run, "tank_compare": tank_compare}
     try:
         args = json.loads(payload) if payload else {}

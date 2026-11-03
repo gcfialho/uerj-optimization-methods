@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import numpy as np
 import pytest
 
 from tank_optimizer.objective import (
     SPEC,
+    Subproblem,
     TankSpec,
     barrier_problem,
     constraints,
@@ -84,12 +86,14 @@ def test_penalty_problem_values() -> None:
     assert psi.fun(np.array([0.5, 0.5])) == pytest.approx(float(cost(0.5, 0.5)) + 1e6 * g1**2)
 
 
-def _fd_grad(f, x: np.ndarray, h: float = 1e-6) -> np.ndarray:
+def _fd_grad(
+    f: Callable[[np.ndarray], float | np.ndarray], x: np.ndarray, h: float = 1e-6
+) -> np.ndarray:
     return np.array([(f(x + e) - f(x - e)) / (2 * h) for e in h * np.eye(x.size)])
 
 
 @pytest.mark.parametrize(
-    ("problem", "x"),
+    ("problem", "point"),
     [
         (barrier_problem(1.0), [0.9, 1.2]),
         (barrier_problem(0.1), [0.97, 1.0]),
@@ -98,8 +102,10 @@ def _fd_grad(f, x: np.ndarray, h: float = 1e-6) -> np.ndarray:
         (penalty_problem(1e5, 1e-3), [0.9, 1.2]),  # feasible: plain cost
     ],
 )
-def test_exact_derivatives_match_finite_differences(problem, x: list[float]) -> None:
-    x = np.array(x)
+def test_exact_derivatives_match_finite_differences(
+    problem: Subproblem, point: list[float]
+) -> None:
+    x = np.array(point)
     np.testing.assert_allclose(problem.grad(x), _fd_grad(problem.fun, x), rtol=1e-6, atol=1e-3)
     np.testing.assert_allclose(problem.hess(x), _fd_grad(problem.grad, x).T, rtol=1e-5, atol=1e-2)
     np.testing.assert_allclose(problem.hess(x), problem.hess(x).T)

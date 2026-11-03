@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -16,6 +17,8 @@ from nelder_mead import (
     minimize,
     simplex_volume,
 )
+from nelder_mead.functions import Problem
+from nelder_mead.optimizer import FloatArray, Objective, Result
 
 # (problem, max distance to the nearest known minimizer)
 DEMOS = [
@@ -27,11 +30,15 @@ DEMOS = [
 ]
 
 
-def run(slug: str, **kwargs):
+def scalar(problem: Problem) -> Callable[[FloatArray], float]:
+    """The benchmarks are vectorized; SciPy's typed API wants a scalar objective."""
+    func = problem.function.func
+    return lambda x: float(func(x))
+
+
+def run(slug: str) -> tuple[Problem, Result]:
     problem = PROBLEMS[slug]
-    return problem, minimize(
-        problem.function.func, initial_simplex=problem.initial_simplex, **kwargs
-    )
+    return problem, minimize(problem.function.func, initial_simplex=problem.initial_simplex)
 
 
 @pytest.mark.parametrize(("slug", "tol"), DEMOS)
@@ -47,7 +54,7 @@ def test_matches_scipy(slug: str) -> None:
     """Same formulation, simplex and tolerances as SciPy -> the same sequence of simplices."""
     problem, result = run(slug)
     ref = scipy_minimize(
-        problem.function.func,
+        scalar(problem),
         problem.initial_simplex[0],
         method="Nelder-Mead",
         options={"initial_simplex": problem.initial_simplex, "xatol": 1e-8, "fatol": 1e-8},
@@ -75,7 +82,7 @@ def test_higher_dimensional_sphere_and_rosenbrock(dim: int) -> None:
         max_fev=40_000,
     )
     ref = scipy_minimize(
-        rosen.function.func,
+        scalar(rosen),
         rosen.initial_simplex[0],
         method="Nelder-Mead",
         options={
@@ -95,7 +102,9 @@ def egg_crate(x: np.ndarray) -> float:
 
 
 UNIT_SIMPLEX = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-INVARIANT_CASES = [(PROBLEMS[s].function.func, PROBLEMS[s].initial_simplex) for s, _ in DEMOS]
+INVARIANT_CASES: list[tuple[Objective, FloatArray]] = [
+    (PROBLEMS[s].function.func, PROBLEMS[s].initial_simplex) for s, _ in DEMOS
+]
 INVARIANT_CASES.append((egg_crate, UNIT_SIMPLEX))
 
 
@@ -170,7 +179,10 @@ def test_budget_limits_are_respected() -> None:
 def test_default_simplex_matches_scipy_convention() -> None:
     sim = default_simplex([1.0, 0.0, -2.0])
     np.testing.assert_allclose(
-        sim, [[1, 0, -2], [1.05, 0, -2], [1, 0.00025, -2], [1, 0, -2.1]], rtol=0, atol=1e-15
+        sim,
+        [[1.0, 0.0, -2.0], [1.05, 0.0, -2.0], [1.0, 0.00025, -2.0], [1.0, 0.0, -2.1]],
+        rtol=0,
+        atol=1e-15,
     )
 
 

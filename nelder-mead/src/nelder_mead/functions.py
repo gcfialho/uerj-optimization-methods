@@ -43,14 +43,16 @@ def booth(x: ArrayLike) -> NDArray[np.float64] | float:
     """``(x + 2y - 7)^2 + (2x + y - 5)^2``; minimum 0 at ``(1, 3)``."""
     x = np.asarray(x, dtype=float)
     u, v = x[..., 0], x[..., 1]
-    return (u + 2 * v - 7) ** 2 + (2 * u + v - 5) ** 2
+    value: NDArray[np.float64] | float = (u + 2 * v - 7) ** 2 + (2 * u + v - 5) ** 2
+    return value
 
 
 def himmelblau(x: ArrayLike) -> NDArray[np.float64] | float:
     """``(x^2 + y - 11)^2 + (x + y^2 - 7)^2``; four global minima with value 0."""
     x = np.asarray(x, dtype=float)
     u, v = x[..., 0], x[..., 1]
-    return (u**2 + v - 11) ** 2 + (u + v**2 - 7) ** 2
+    value: NDArray[np.float64] | float = (u**2 + v - 11) ** 2 + (u + v**2 - 7) ** 2
+    return value
 
 
 HIMMELBLAU_MINIMA = np.array(
@@ -128,7 +130,7 @@ class Problem:
 
     @property
     def dim(self) -> int:
-        return self.initial_simplex.shape[1]
+        return int(self.initial_simplex.shape[1])
 
     @property
     def slug(self) -> str:

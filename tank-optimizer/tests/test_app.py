@@ -50,7 +50,7 @@ def test_compare(client: FlaskClient) -> None:
         ("/compare", {"D0": 0.5, "L0": 0.5, "max_iter": 0}),
     ],
 )
-def test_invalid_requests(client: FlaskClient, route: str, payload: dict) -> None:
+def test_invalid_requests(client: FlaskClient, route: str, payload: dict[str, object]) -> None:
     response = client.post(route, json=payload)
     assert response.status_code == 400
     assert "error" in response.get_json()

@@ -76,7 +76,8 @@ SPEC = TankSpec()
 
 def volume(D: ArrayLike, L: ArrayLike) -> FloatArray:
     """Internal volume ``pi D^2 L / 4`` [m^3]."""
-    return np.pi * np.asarray(D) ** 2 * np.asarray(L) / 4
+    result: FloatArray = np.pi * np.asarray(D) ** 2 * np.asarray(L) / 4
+    return result
 
 
 def mass(D: ArrayLike, L: ArrayLike, spec: TankSpec = SPEC) -> FloatArray:
@@ -185,7 +186,8 @@ def barrier_problem(mu: float, spec: TankSpec = SPEC) -> Subproblem:
         dg, d2g = _constraint_derivatives(D, L)
         outer = np.einsum("ki,kj->kij", dg, dg)
         terms = outer / (g**2)[:, None, None] - d2g / g[:, None, None]
-        return cost_hessian(spec) + mu * terms.sum(axis=0)
+        result: FloatArray = cost_hessian(spec) + mu * terms.sum(axis=0)
+        return result
 
     return Subproblem("barrier", mu, fun, grad, hess)
 
@@ -217,6 +219,7 @@ def penalty_problem(r: float, margin: float, spec: TankSpec = SPEC) -> Subproble
         active = h > 0
         outer = np.einsum("ki,kj->kij", dg[active], dg[active])
         terms = outer + h[active, None, None] * d2g[active]
-        return cost_hessian(spec) + 2 * r * terms.sum(axis=0)
+        result: FloatArray = cost_hessian(spec) + 2 * r * terms.sum(axis=0)
+        return result
 
     return Subproblem("penalty", r, fun, grad, hess)

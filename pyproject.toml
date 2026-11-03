@@ -10,9 +10,11 @@ dependencies = ["nelder-mead", "tank-optimizer"]
 
 [dependency-groups]
 dev = [
+    "mypy>=2.4.1",
     "pytest>=8.3",
     "ruff>=0.12",
     "scipy>=1.14",
+    "scipy-stubs>=1.18.1.1",
 ]
 
 [tool.uv]
@@ -24,6 +26,23 @@ members = ["nelder-mead", "tank-optimizer"]
 [tool.uv.sources]
 nelder-mead = { workspace = true }
 tank-optimizer = { workspace = true }
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = [
+    "nelder-mead/src",
+    "nelder-mead/tests",
+    "tank-optimizer/src",
+    "tank-optimizer/tests",
+    "web",
+    "scripts",
+]
+
+[[tool.mypy.overrides]]
+# mpl_toolkits (3-D axes) is installed with matplotlib but has no py.typed marker.
+module = ["mpl_toolkits", "mpl_toolkits.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["nelder-mead/tests", "tank-optimizer/tests", "web/tests"]
